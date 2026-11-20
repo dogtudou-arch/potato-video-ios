@@ -1,7 +1,7 @@
 import Foundation
 import UIKit
 
-struct Source: Hashable, Sendable {
+struct Source: Hashable, Codable, Sendable {
     let name: String
     let url: String
 
@@ -15,7 +15,7 @@ struct Source: Hashable, Sendable {
     ]
 }
 
-struct Video: Identifiable, Hashable, Sendable {
+struct Video: Identifiable, Hashable, Codable, Sendable {
     let source: Source
     let vodID: String
     let title: String
@@ -40,6 +40,12 @@ struct Video: Identifiable, Hashable, Sendable {
         }
         return ""
     }
+}
+
+struct FavoriteFolder: Identifiable, Codable {
+    let id: UUID
+    var name: String
+    var videos: [Video]
 }
 
 struct Episode: Identifiable, Hashable {

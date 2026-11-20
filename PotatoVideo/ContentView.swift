@@ -72,6 +72,16 @@ struct HomeView: View {
                                 .background(Theme.coral, in: RoundedRectangle(cornerRadius: 15))
                         }
 
+                        NavigationLink(destination: FavoritesView()) {
+                            Text("我的收藏")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 54)
+                                .background(Theme.teal, in: RoundedRectangle(cornerRadius: 15))
+                        }
+                        .buttonStyle(.plain)
+
                         if store.showingResults {
                             resultsSection
                         } else if !store.history.isEmpty {
@@ -198,11 +208,17 @@ struct HomeView: View {
 
 struct DetailView: View {
     let video: Video
+    var returnTitle = "返回搜索结果"
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var store: VideoStore
     @State private var episodes: [Episode] = []
     @State private var selectedEpisode: Episode?
     @State private var isLoading = true
     @State private var message = ""
+    @State private var showingFolderPicker = false
+    @State private var showingNewFolder = false
+    @State private var newFolderName = ""
+    @State private var favoriteFeedback = ""
 
     private let columns = [GridItem(.adaptive(minimum: 54, maximum: 54), spacing: 27)]
 
@@ -211,7 +227,7 @@ struct DetailView: View {
             FrostedBackground()
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    Button("返回搜索结果") { dismiss() }
+                    Button(returnTitle) { dismiss() }
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
@@ -225,6 +241,17 @@ struct DetailView: View {
                         Text(subtitle)
                             .font(.system(size: 14))
                             .foregroundStyle(Theme.muted)
+                    }
+                    Button("加入文件夹") { showingFolderPicker = true }
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(Theme.coral, in: RoundedRectangle(cornerRadius: 15))
+                    if !favoriteFeedback.isEmpty {
+                        Text(favoriteFeedback)
+                            .font(.system(size: 14))
+                            .foregroundStyle(Theme.ink)
                     }
                     if isLoading {
                         ProgressView().tint(Theme.teal)
@@ -259,6 +286,28 @@ struct DetailView: View {
         .fullScreenCover(item: $selectedEpisode) { episode in
             PlayerScreen(video: video, episode: episode)
         }
+        .confirmationDialog("加入文件夹", isPresented: $showingFolderPicker) {
+            ForEach(store.folders) { folder in
+                Button((store.contains(video, in: folder.id) ? "✓ " : "") + folder.name) {
+                    store.add(video, to: folder.id)
+                    favoriteFeedback = "已加入“" + folder.name + "”"
+                }
+            }
+            Button("＋ 新建文件夹") {
+                newFolderName = ""
+                showingNewFolder = true
+            }
+        }
+        .alert("新建文件夹", isPresented: $showingNewFolder) {
+            TextField("文件夹名称", text: $newFolderName)
+            Button("创建") {
+                if let folderID = store.createFolder(newFolderName) {
+                    store.add(video, to: folderID)
+                    favoriteFeedback = "已加入“" + newFolderName.trimmingCharacters(in: .whitespacesAndNewlines) + "”"
+                }
+            }
+            Button("取消", role: .cancel) { }
+        }
         .task {
             guard UsageWindow.isActive() else {
                 isLoading = false
@@ -272,6 +321,190 @@ struct DetailView: View {
                 message = "加载失败，请检查网络或片源"
             }
             isLoading = false
+        }
+    }
+}
+
+struct FavoritesView: View {
+    @EnvironmentObject private var store: VideoStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var editing = false
+    @State private var confirmingClear = false
+    @State private var showingNewFolder = false
+    @State private var folderName = ""
+
+    var body: some View {
+        ZStack {
+            FrostedBackground()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Button("返回搜索") { dismiss() }
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .background(Theme.teal, in: RoundedRectangle(cornerRadius: 16))
+                    HStack {
+                        Text("我的收藏")
+                            .font(.system(size: 23, weight: .bold))
+                        Spacer()
+                        if !store.folders.isEmpty {
+                            if editing {
+                                Button("全部删除") { confirmingClear = true }
+                                    .foregroundStyle(Theme.muted)
+                                Button("完成") { editing = false }
+                            } else {
+                                Button { editing = true } label: {
+                                    Image(systemName: "trash").frame(width: 44, height: 44)
+                                }
+                                .accessibilityLabel("编辑收藏")
+                            }
+                        }
+                    }
+                    .foregroundStyle(Theme.ink)
+                    Button("＋ 新建文件夹") {
+                        folderName = ""
+                        showingNewFolder = true
+                    }
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(Theme.teal, in: RoundedRectangle(cornerRadius: 15))
+
+                    ForEach(store.folders) { folder in
+                        HStack {
+                            NavigationLink(destination: FolderView(folderID: folder.id)) {
+                                Text(folder.name + "（\(folder.videos.count)）")
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .disabled(editing)
+                            if editing {
+                                Button {
+                                    store.deleteFolder(folder.id)
+                                    if store.folders.isEmpty { editing = false }
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 13))
+                                        .frame(width: 36, height: 44)
+                                }
+                                .accessibilityLabel("删除" + folder.name)
+                            }
+                        }
+                        .font(.system(size: 16))
+                        .foregroundStyle(Theme.ink)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(.white.opacity(0.86), in: RoundedRectangle(cornerRadius: 14))
+                    }
+                }
+                .padding(18)
+            }
+        }
+        .toolbar(.hidden, for: .navigationBar)
+        .alert("新建文件夹", isPresented: $showingNewFolder) {
+            TextField("文件夹名称", text: $folderName)
+            Button("创建") { _ = store.createFolder(folderName) }
+            Button("取消", role: .cancel) { }
+        }
+        .confirmationDialog("删除全部文件夹和收藏的视频？", isPresented: $confirmingClear) {
+            Button("全部删除", role: .destructive) {
+                store.clearFolders()
+                editing = false
+            }
+        }
+    }
+}
+
+struct FolderView: View {
+    let folderID: UUID
+    @EnvironmentObject private var store: VideoStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var editing = false
+    @State private var confirmingClear = false
+
+    private var folder: FavoriteFolder? { store.folders.first { $0.id == folderID } }
+
+    var body: some View {
+        ZStack {
+            FrostedBackground()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Button("返回我的收藏") { dismiss() }
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .background(Theme.teal, in: RoundedRectangle(cornerRadius: 16))
+                    if let folder {
+                        HStack {
+                            Text(folder.name)
+                                .font(.system(size: 23, weight: .bold))
+                            Spacer()
+                            if !folder.videos.isEmpty {
+                                if editing {
+                                    Button("全部删除") { confirmingClear = true }
+                                        .foregroundStyle(Theme.muted)
+                                    Button("完成") { editing = false }
+                                } else {
+                                    Button { editing = true } label: {
+                                        Image(systemName: "trash").frame(width: 44, height: 44)
+                                    }
+                                    .accessibilityLabel("编辑收藏视频")
+                                }
+                            }
+                        }
+                        .foregroundStyle(Theme.ink)
+                        if folder.videos.isEmpty {
+                            Text("还没有收藏的视频")
+                                .font(.system(size: 15))
+                                .foregroundStyle(Theme.muted)
+                        }
+                        ForEach(folder.videos) { video in
+                            HStack {
+                                NavigationLink(destination: DetailView(video: video, returnTitle: "返回收藏列表")) {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(video.title).font(.system(size: 16, weight: .medium))
+                                        if !video.details.isEmpty {
+                                            Text(video.details)
+                                                .font(.system(size: 13))
+                                                .foregroundStyle(Theme.muted)
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .disabled(editing)
+                                if editing {
+                                    Button {
+                                        store.remove(video, from: folderID)
+                                        if store.folders.first(where: { $0.id == folderID })?.videos.isEmpty == true {
+                                            editing = false
+                                        }
+                                    } label: {
+                                        Image(systemName: "xmark")
+                                            .font(.system(size: 13))
+                                            .frame(width: 36, height: 44)
+                                    }
+                                    .accessibilityLabel("删除" + video.title)
+                                }
+                            }
+                            .foregroundStyle(Theme.ink)
+                            .padding(14)
+                            .background(.white.opacity(0.86), in: RoundedRectangle(cornerRadius: 14))
+                        }
+                    }
+                }
+                .padding(18)
+            }
+        }
+        .toolbar(.hidden, for: .navigationBar)
+        .confirmationDialog("清空这个文件夹中的视频？", isPresented: $confirmingClear) {
+            Button("清空", role: .destructive) {
+                if let folder {
+                    for video in folder.videos { store.remove(video, from: folderID) }
+                }
+                editing = false
+            }
         }
     }
 }
